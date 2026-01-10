@@ -31,7 +31,7 @@ export function Modal({ isOpen, onClose, title, children, footer }: ModalProps) 
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-4">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
@@ -41,7 +41,7 @@ export function Modal({ isOpen, onClose, title, children, footer }: ModalProps) 
       {/* Modal content */}
       <div
         ref={modalRef}
-        className="relative glass rounded-2xl w-full max-w-lg mx-4 animate-slide-up shadow-2xl"
+        className="relative glass rounded-2xl w-full max-w-lg mx-4 my-auto animate-slide-up shadow-2xl max-h-[90vh] overflow-y-auto"
       >
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-white/10">

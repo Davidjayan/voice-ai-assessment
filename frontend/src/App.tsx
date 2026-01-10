@@ -4,6 +4,7 @@ import Layout from './components/Layout'
 import ProjectsPage from './pages/ProjectsPage'
 import ProjectDetailPage from './pages/ProjectDetailPage'
 import LoginPage from './pages/LoginPage'
+import JoinPage from './pages/JoinPage'
 import { OrganizationContext } from './hooks/useOrganization'
 import { AuthProvider, useAuth } from './hooks/useAuth'
 
@@ -25,6 +26,7 @@ function AppContent() {
     <OrganizationContext.Provider value={{ organizationId, setOrganizationId }}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/join" element={<JoinPage />} />
         <Route
           path="/*"
           element={

@@ -5,9 +5,37 @@ import graphene
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.contrib.auth.models import User
 
-from .types import ProjectType, TaskType, TaskCommentType, ProjectInput, TaskInput, CommentInput
+from .types import ProjectType, TaskType, TaskCommentType, ProjectInput, TaskInput, CommentInput, OrganizationType
 from services.project_service import ProjectService
 from services.task_service import TaskService
+from services.organization_service import OrganizationService
+from organizations.models import OrganizationMembership, OrganizationInvite
+
+
+
+class CreateOrganization(graphene.Mutation):
+    """Create a new organization."""
+    
+    class Arguments:
+        name = graphene.String(required=True)
+        description = graphene.String()
+
+    organization = graphene.Field(OrganizationType)
+    success = graphene.Boolean()
+    error = graphene.String()
+
+    def mutate(self, info, name, description=""):
+        if not info.context.user.is_authenticated:
+            return CreateOrganization(organization=None, success=False, error="Authentication required")
+        try:
+            organization = OrganizationService.create_organization(
+                name=name,
+                user=info.context.user,
+                description=description or ""
+            )
+            return CreateOrganization(organization=organization, success=True, error=None)
+        except (ValidationError, PermissionDenied) as e:
+            return CreateOrganization(organization=None, success=False, error=str(e))
 
 
 class CreateProject(graphene.Mutation):
@@ -199,6 +227,14 @@ class Login(graphene.Mutation):
     error = graphene.String()
 
     def mutate(self, info, username, password):
+        # Support login with email
+        if '@' in username:
+            try:
+                user_obj = User.objects.get(email=username)
+                username = user_obj.username
+            except User.DoesNotExist:
+                return Login(success=False, error="User with this email not found")
+
         user = authenticate(username=username, password=password)
         if user is not None:
             login(info.context, user)
@@ -228,6 +264,96 @@ class Logout(graphene.Mutation):
         return Logout(success=True)
 
 
+class JoinOrganization(graphene.Mutation):
+    """Join an organization using an invite code."""
+    
+    class Arguments:
+        invite_code = graphene.String(required=True)
+
+    organization = graphene.Field(OrganizationType)
+    success = graphene.Boolean()
+    error = graphene.String()
+
+    def mutate(self, info, invite_code):
+        if not info.context.user.is_authenticated:
+            return JoinOrganization(organization=None, success=False, error="Authentication required")
+        
+        try:
+            invite = OrganizationInvite.objects.get(invite_code=invite_code)
+        except OrganizationInvite.DoesNotExist:
+            return JoinOrganization(organization=None, success=False, error="Invalid invite code")
+        
+        if not invite.is_valid:
+            return JoinOrganization(organization=None, success=False, error="Invite has expired or already been used")
+        
+        # Check if already a member
+        if OrganizationMembership.objects.filter(user=info.context.user, organization=invite.organization).exists():
+            return JoinOrganization(organization=invite.organization, success=True, error=None)
+        
+        # Create membership
+        OrganizationMembership.objects.create(
+            user=info.context.user,
+            organization=invite.organization,
+            role='member'
+        )
+        
+        # Mark invite as used
+        invite.used = True
+        invite.used_by = info.context.user
+        invite.save()
+        
+        return JoinOrganization(organization=invite.organization, success=True, error=None)
+
+
+class InviteToOrganization(graphene.Mutation):
+    """Invite a user to an organization. Only owners can invite."""
+    
+    class Arguments:
+        organization_id = graphene.UUID(required=True)
+        email = graphene.String(required=True)
+
+    invite_code = graphene.String()
+    success = graphene.Boolean()
+    error = graphene.String()
+
+    def mutate(self, info, organization_id, email):
+        if not info.context.user.is_authenticated:
+            return InviteToOrganization(invite_code=None, success=False, error="Authentication required")
+        
+        # Check if user is owner of the organization
+        try:
+            membership = OrganizationMembership.objects.get(
+                user=info.context.user,
+                organization_id=organization_id
+            )
+        except OrganizationMembership.DoesNotExist:
+            return InviteToOrganization(invite_code=None, success=False, error="Organization not found")
+        
+        if membership.role != 'owner':
+            return InviteToOrganization(invite_code=None, success=False, error="Only organization owners can invite users")
+        
+        # Create invite
+        from django.utils import timezone
+        from datetime import timedelta
+        from services.email_service import EmailService
+        
+        invite = OrganizationInvite.objects.create(
+            organization_id=organization_id,
+            email=email,
+            invited_by=info.context.user,
+            expires_at=timezone.now() + timedelta(days=7)
+        )
+        
+        # Send invite email (don't fail the mutation if email fails)
+        EmailService.send_organization_invite(
+            to_email=email,
+            organization_name=membership.organization.name,
+            invite_code=str(invite.invite_code),
+            invited_by_username=info.context.user.username
+        )
+        
+        return InviteToOrganization(invite_code=str(invite.invite_code), success=True, error=None)
+
 class Mutation(graphene.ObjectType):
     """Root mutation type."""
     # Auth
@@ -240,4 +366,7 @@ class Mutation(graphene.ObjectType):
     update_project = UpdateProject.Field()
     create_task = CreateTask.Field()
     update_task = UpdateTask.Field()
+    create_organization = CreateOrganization.Field()
+    join_organization = JoinOrganization.Field()
+    invite_to_organization = InviteToOrganization.Field()
     add_task_comment = AddTaskComment.Field()

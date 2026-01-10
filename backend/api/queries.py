@@ -60,7 +60,11 @@ class Query(graphene.ObjectType):
     def resolve_organizations(self, info):
         if not info.context.user.is_authenticated:
             return []
-        return Organization.objects.filter(is_active=True)
+        # Filter by user membership
+        return Organization.objects.filter(
+            is_active=True,
+            memberships__user=info.context.user
+        ).distinct()
 
     def resolve_organization(self, info, id):
         if not info.context.user.is_authenticated:

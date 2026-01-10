@@ -1,12 +1,23 @@
-import { ApolloClient, InMemoryCache, createHttpLink } from '@apollo/client'
+import { ApolloClient, InMemoryCache, createHttpLink, from } from '@apollo/client'
+import { setContext } from '@apollo/client/link/context'
 
 const httpLink = createHttpLink({
   uri: 'http://localhost:8000/graphql/',
   credentials: 'include',
 })
 
+const authLink = setContext((_, { headers }) => {
+  const sessionKey = localStorage.getItem('sessionKey')
+  return {
+    headers: {
+      ...headers,
+      ...(sessionKey ? { 'X-Session-ID': sessionKey } : {}),
+    }
+  }
+})
+
 export const apolloClient = new ApolloClient({
-  link: httpLink,
+  link: from([authLink, httpLink]),
   cache: new InMemoryCache({
     typePolicies: {
       Project: {

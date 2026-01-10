@@ -1,5 +1,5 @@
-import { createContext, useContext, useState, ReactNode } from 'react'
-import { gql, useApolloClient, useQuery } from '@apollo/client'
+import { createContext, useContext, useState, ReactNode, useEffect } from 'react'
+import { gql, useApolloClient, useLazyQuery } from '@apollo/client'
 import { useNavigate } from 'react-router-dom'
 
 interface User {
@@ -12,6 +12,7 @@ interface User {
 interface AuthContextType {
   user: User | null
   isAuthenticated: boolean
+  isLoading: boolean
   login: () => Promise<void>
   logout: () => void
 }
@@ -42,8 +43,6 @@ export const LOGOUT_MUTATION = gql`
   }
 `
 
-
-
 export const ME_QUERY = gql`
   query Me {
     me {
@@ -56,29 +55,44 @@ export const ME_QUERY = gql`
 `
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [user, setUser] = useState<User | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
   const navigate = useNavigate()
   const client = useApolloClient()
 
-  const { data, loading, refetch } = useQuery(ME_QUERY, {
+  const [fetchMe] = useLazyQuery(ME_QUERY, {
     fetchPolicy: 'network-only',
     onCompleted: (data) => {
       if (data?.me) {
-        setIsAuthenticated(true)
+        setUser(data.me)
       } else {
-        setIsAuthenticated(false)
+        // Server returned null user, clear session
+        localStorage.removeItem('sessionKey')
+        setUser(null)
       }
+      setIsLoading(false)
     },
     onError: () => {
-      setIsAuthenticated(false)
+      localStorage.removeItem('sessionKey')
+      setUser(null)
+      setIsLoading(false)
     }
   })
 
+  // Check session on mount
+  useEffect(() => {
+    const sessionKey = localStorage.getItem('sessionKey')
+    if (sessionKey) {
+      // We have a session key, try to fetch user
+      fetchMe()
+    } else {
+      // No session key, not authenticated
+      setIsLoading(false)
+    }
+  }, [fetchMe])
+
   const login = async () => {
-    // Session key is handled by cookie now
-    // We just need to refetch the user
-    await refetch()
-    setIsAuthenticated(true)
+    await fetchMe()
     navigate('/')
   }
 
@@ -88,18 +102,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       console.error('Logout failed', e)
     } finally {
-      setIsAuthenticated(false)
+      localStorage.removeItem('sessionKey')
+      setUser(null)
       await client.resetStore()
       navigate('/login')
     }
   }
 
-  if (loading) {
+  if (isLoading) {
     return <div className="flex items-center justify-center h-screen">Loading...</div>
   }
 
+  const isAuthenticated = !!user
+
   return (
-    <AuthContext.Provider value={{ user: data?.me || null, isAuthenticated, login, logout }}>
+    <AuthContext.Provider value={{ user, isAuthenticated, isLoading, login, logout }}>
       {children}
     </AuthContext.Provider>
   )

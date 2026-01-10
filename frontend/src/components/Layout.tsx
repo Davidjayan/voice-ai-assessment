@@ -1,4 +1,4 @@
-import { ReactNode } from 'react'
+import { ReactNode, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useQuery, gql } from '@apollo/client'
 import { useOrganization } from '../hooks/useOrganization'
@@ -6,6 +6,8 @@ import { useAuth } from '../hooks/useAuth'
 import { Organization } from '../types'
 
 import { ThemeToggle } from './ThemeToggle'
+import { OrganizationModal } from './OrganizationModal'
+import { InviteModal } from './InviteModal'
 
 const GET_ORGANIZATIONS = gql`
   query GetOrganizations {
@@ -25,7 +27,16 @@ export default function Layout({ children }: LayoutProps) {
   const location = useLocation()
   const { organizationId, setOrganizationId } = useOrganization()
   const { user, logout } = useAuth()
-  const { data } = useQuery<{ organizations: Organization[] }>(GET_ORGANIZATIONS)
+  const { data, refetch } = useQuery<{ organizations: Organization[] }>(GET_ORGANIZATIONS)
+  const [isOrgModalOpen, setIsOrgModalOpen] = useState(false)
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false)
+
+  const currentOrg = data?.organizations?.find(org => org.id === organizationId)
+
+  const handleOrgSuccess = async (newOrgId: string) => {
+    await refetch()
+    setOrganizationId(newOrgId)
+  }
 
   // Auto-select first organization if none selected
   if (data?.organizations?.length && !organizationId) {
@@ -34,6 +45,13 @@ export default function Layout({ children }: LayoutProps) {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-gradient-to-br dark:from-slate-900 dark:via-slate-900 dark:to-slate-800 transition-colors duration-300">
+      {/* Organization Modal */}
+      <OrganizationModal
+        isOpen={isOrgModalOpen}
+        onClose={() => setIsOrgModalOpen(false)}
+        onSuccess={handleOrgSuccess}
+      />
+
       {/* Header */}
       <header className="sticky top-0 z-40 glass border-b border-white/5">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -64,6 +82,12 @@ export default function Layout({ children }: LayoutProps) {
 
             {/* Organization Selector & User Profile */}
             <div className="flex items-center gap-4">
+              <button
+                onClick={() => setIsOrgModalOpen(true)}
+                className="text-xs font-medium text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300"
+              >
+                + New Org
+              </button>
               {data?.organizations && data.organizations.length > 0 && (
                 <select
                   value={organizationId || ''}
@@ -77,6 +101,25 @@ export default function Layout({ children }: LayoutProps) {
                   ))}
                 </select>
               )}
+              {organizationId && currentOrg && (
+                <button
+                  onClick={() => setIsInviteModalOpen(true)}
+                  className="text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-primary-600 dark:hover:text-primary-300"
+                  title="Invite user to organization"
+                >
+                  Invite
+                </button>
+              )}
+
+              {/* Invite Modal */}
+              {currentOrg && (
+                <InviteModal
+                  isOpen={isInviteModalOpen}
+                  onClose={() => setIsInviteModalOpen(false)}
+                  organizationId={organizationId!}
+                  organizationName={currentOrg.name}
+                />
+              )}
 
               <div className="flex items-center gap-3 pl-4 border-l border-slate-200 dark:border-white/10">
                 <ThemeToggle />
@@ -84,7 +127,11 @@ export default function Layout({ children }: LayoutProps) {
                   <p className="text-sm font-medium text-slate-900 dark:text-white">{user?.username}</p>
                 </div>
                 <button
-                  onClick={logout}
+                  onClick={() => {
+                    if (window.confirm('Are you sure you want to sign out?')) {
+                      logout()
+                    }
+                  }}
                   className="p-2 text-slate-400 hover:text-primary-600 dark:hover:text-white transition-colors rounded-lg hover:bg-slate-100 dark:hover:bg-white/5"
                   title="Sign Out"
                 >
@@ -102,8 +149,14 @@ export default function Layout({ children }: LayoutProps) {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {!organizationId && data?.organizations?.length === 0 ? (
           <div className="text-center py-12">
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">No Organizations</h2>
-            <p className="text-slate-600 dark:text-slate-400">Create an organization in the Django admin to get started.</p>
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">Welcome to ProjectHub</h2>
+            <p className="text-slate-600 dark:text-slate-400 mb-6">Create or join an organization to get started.</p>
+            <button
+              onClick={() => setIsOrgModalOpen(true)}
+              className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+            >
+              Get Started
+            </button>
           </div>
         ) : (
           children

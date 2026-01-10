@@ -22,6 +22,9 @@ export default function LoginPage() {
       })
 
       if (data?.login?.success) {
+        if (data.login.sessionKey) {
+          localStorage.setItem('sessionKey', data.login.sessionKey)
+        }
         await login()
       } else {
         setError(data?.login?.error || 'Invalid credentials')
@@ -48,8 +51,8 @@ export default function LoginPage() {
           )}
 
           <Input
-            label="Username"
-            placeholder="Enter your username"
+            label="Email or Username"
+            placeholder="Enter your email or username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             required
