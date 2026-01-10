@@ -179,7 +179,10 @@ class Register(graphene.Mutation):
             if User.objects.filter(email=email).exists():
                 return Register(user=None, success=False, error="Email already exists")
                 
-            user = User.objects.create_user(username=username, email=email, password=password)
+            # Use explicit create + set_password for robustness/clarity
+            user = User(username=username, email=email, is_active=True)
+            user.set_password(password)
+            user.save()
             return Register(user=user, success=True, error=None)
         except Exception as e:
             return Register(user=None, success=False, error=str(e))
@@ -203,7 +206,18 @@ class Login(graphene.Mutation):
                 info.context.session.save()
             return Login(success=True, session_key=info.context.session.session_key, user=user)
         else:
-            return Login(success=False, error="Invalid credentials")
+            # Debugging Helpers
+            if not User.objects.filter(username=username).exists():
+                return Login(success=False, error="User not found")
+            
+            u = User.objects.get(username=username)
+            if not u.check_password(password):
+                return Login(success=False, error="Invalid password")
+                
+            if not u.is_active:
+                return Login(success=False, error="User account is disabled")
+                
+            return Login(success=False, error="Invalid credentials (unknown reason)")
 
 
 class Logout(graphene.Mutation):
